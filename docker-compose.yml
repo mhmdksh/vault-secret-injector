@@ -1,0 +1,3 @@
+services:
+  vault-injector:
+    build: .
