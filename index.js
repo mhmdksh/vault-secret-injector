@@ -7,6 +7,7 @@ require('dotenv').config();
 
 // File path to store the last known secret values
 const cacheFilePath = path.resolve(__dirname, '.last.cache.json');
+const secretsFilePath = process.env.SECRETS_FILE_PATH || path.resolve('/shared', 'secrets.env');
 
 // Create a Vault client
 const vaultClient = vault({
@@ -32,6 +33,9 @@ async function readSecret() {
     for (const [key, value] of Object.entries(secretData)) {
       console.log(`${key}=${value}`);
     }
+
+    // Write the secrets to the .env file
+    writeSecretsToFile(secretData);
   } catch (err) {
     if (err.message.includes('permission denied') || err.message.includes('invalid token')) {
       console.error('Authentication Failure');
@@ -44,6 +48,9 @@ async function readSecret() {
         for (const [key, value] of Object.entries(cachedData)) {
           console.log(`${key}=${value}`);
         }
+
+        // Write the cached secrets to the .env file
+        writeSecretsToFile(cachedData);
       } else {
         console.error('No cached secret values available');
       }
@@ -51,6 +58,18 @@ async function readSecret() {
       console.error('Error reading secret:', err.message);
     }
   }
+}
+
+// Function to write secrets to a .env file
+function writeSecretsToFile(secretData) {
+  const secretLines = Object.entries(secretData).map(([key, value]) => `${key}=${value}`).join('\n');
+
+  // Create the .env file if it doesn't exist
+  if (!fs.existsSync(secretsFilePath)) {
+    fs.writeFileSync(secretsFilePath, '');
+  }
+
+  fs.writeFileSync(secretsFilePath, secretLines);
 }
 
 // Function to periodically check for secret updates
@@ -77,6 +96,9 @@ async function checkForUpdates() {
         for (const [key, value] of Object.entries(secretData)) {
           console.log(`${key}=${value}`);
         }
+
+        // Write the updated secrets to the .env file
+        writeSecretsToFile(secretData);
       }
     } else {
       // Cache the latest known secret values if not already cached
@@ -86,6 +108,9 @@ async function checkForUpdates() {
       for (const [key, value] of Object.entries(secretData)) {
         console.log(`${key}=${value}`);
       }
+
+      // Write the secrets to the .env file
+      writeSecretsToFile(secretData);
     }
   } catch (err) {
     console.error('Error checking for updates:', err.message);

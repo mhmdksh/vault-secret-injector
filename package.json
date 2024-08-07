@@ -4,10 +4,11 @@
     "description": "A Node.js application to connect to Hashicorp Vault and handle secrets.",
     "main": "index.js",
     "scripts": {
-      "start": "node app.js"
+        "start": "node app.js"
     },
     "dependencies": {
-      "node-vault": "^0.10.0",
-      "dotenv": "^16.0.0"
+        "dockerode": "^4.0.2",
+        "dotenv": "^16.0.0",
+        "node-vault": "^0.10.0"
     }
 }
