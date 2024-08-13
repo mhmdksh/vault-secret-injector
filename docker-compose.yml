@@ -1,5 +1,8 @@
 services:
   vault-injector:
+    container_name: vault-injector
     build: .
     volumes:
-      - ${SECRETS_FILE_PATH}:/secrets/secrets.env
+      - type: bind
+        source: ${TARGET_HOST_FILE}
+        target: /secrets/secrets.env
