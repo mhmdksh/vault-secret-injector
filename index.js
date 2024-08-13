@@ -7,7 +7,7 @@ require('dotenv').config();
 
 // File path to store the last known secret values
 const cacheFilePath = path.resolve(__dirname, '.last.cache.json');
-const secretsFilePath = process.env.SECRETS_FILE_PATH || path.resolve('/shared', 'secrets.env');
+const secretsFilePath = process.env.SECRETS_FILE_PATH || path.resolve('/secrets', 'secrets.env');
 
 // Create a Vault client
 const vaultClient = vault({
@@ -28,6 +28,7 @@ async function readSecret() {
 
     // Cache the latest known secret values
     fs.writeFileSync(cacheFilePath, JSON.stringify(secretData, null, 2));
+    console.log('Secrets cached successfully.');
 
     // Output the values in the specified format
     for (const [key, value] of Object.entries(secretData)) {
@@ -63,13 +64,16 @@ async function readSecret() {
 // Function to write secrets to a .env file
 function writeSecretsToFile(secretData) {
   const secretLines = Object.entries(secretData).map(([key, value]) => `${key}=${value}`).join('\n');
-
-  // Create the .env file if it doesn't exist
+  
+  // Create the .env file if it doesn't exist and log the action
   if (!fs.existsSync(secretsFilePath)) {
     fs.writeFileSync(secretsFilePath, '');
+    console.log(`Created new secrets file at ${secretsFilePath}`);
   }
 
+  // Write to the .env file and log the action
   fs.writeFileSync(secretsFilePath, secretLines);
+  console.log(`Secrets written to ${secretsFilePath}`);
 }
 
 // Function to periodically check for secret updates
@@ -91,6 +95,7 @@ async function checkForUpdates() {
 
         // Update the cache with the latest known secret values
         fs.writeFileSync(cacheFilePath, JSON.stringify(secretData, null, 2));
+        console.log('Secrets cache updated.');
 
         // Output the updated values in the specified format
         for (const [key, value] of Object.entries(secretData)) {
@@ -99,10 +104,13 @@ async function checkForUpdates() {
 
         // Write the updated secrets to the .env file
         writeSecretsToFile(secretData);
+      } else {
+        console.log('No changes detected in secret values.');
       }
     } else {
       // Cache the latest known secret values if not already cached
       fs.writeFileSync(cacheFilePath, JSON.stringify(secretData, null, 2));
+      console.log('Secrets cached for the first time.');
 
       // Output the values in the specified format
       for (const [key, value] of Object.entries(secretData)) {

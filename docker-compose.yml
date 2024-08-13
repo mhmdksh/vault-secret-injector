@@ -1,3 +1,5 @@
 services:
   vault-injector:
     build: .
+    volumes:
+      - ${SECRETS_FILE_PATH}:/secrets/secrets.env
