@@ -1,7 +1,10 @@
 services:
   vault-injector:
-    container_name: vault-injector
     build: .
+    container_name: vault-injector
+    restart: always
+    env_file:
+      - .env
     volumes:
       - type: bind
         source: ${TARGET_HOST_FILE}
