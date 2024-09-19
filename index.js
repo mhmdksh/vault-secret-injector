@@ -1,4 +1,5 @@
 const vault = require('node-vault');
+const AWS = require('aws-sdk');
 const fs = require('fs');
 const path = require('path');
 
@@ -7,7 +8,11 @@ require('dotenv').config();
 
 // File path to store the last known secret values
 const cacheFilePath = path.resolve(__dirname, '.last.cache.json');
-const secretsFilePath = process.env.SECRETS_FILE_PATH || path.resolve('/secrets', 'secrets.env');
+
+// AWS Secrets Manager client configuration
+const secretsManager = new AWS.SecretsManager({
+  region: process.env.AWS_REGION || 'us-east-1'
+});
 
 // Create a Vault client
 const vaultClient = vault({
@@ -35,8 +40,8 @@ async function readSecret() {
       console.log(`${key}=${value}`);
     }
 
-    // Write the secrets to the .env file
-    writeSecretsToFile(secretData);
+    // Push the secrets to AWS Secrets Manager
+    await pushSecretsToAWS(secretData);
   } catch (err) {
     if (err.message.includes('permission denied') || err.message.includes('invalid token')) {
       console.error('Authentication Failure');
@@ -50,8 +55,8 @@ async function readSecret() {
           console.log(`${key}=${value}`);
         }
 
-        // Write the cached secrets to the .env file
-        writeSecretsToFile(cachedData);
+        // Push the cached secrets to AWS Secrets Manager
+        await pushSecretsToAWS(cachedData);
       } else {
         console.error('No cached secret values available');
       }
@@ -61,19 +66,44 @@ async function readSecret() {
   }
 }
 
-// Function to write secrets to a .env file
-function writeSecretsToFile(secretData) {
-  const secretLines = Object.entries(secretData).map(([key, value]) => `${key}=${value}`).join('\n');
-  
-  // Create the .env file if it doesn't exist and log the action
-  if (!fs.existsSync(secretsFilePath)) {
-    fs.writeFileSync(secretsFilePath, '');
-    console.log(`Created new secrets file at ${secretsFilePath}`);
-  }
+// Function to push secrets to AWS Secrets Manager
+async function pushSecretsToAWS(secretData) {
+  const secretName = process.env.AWS_SECRET_NAME;
 
-  // Write to the .env file and log the action
-  fs.writeFileSync(secretsFilePath, secretLines);
-  console.log(`Secrets written to ${secretsFilePath}`);
+  try {
+    // Check if the secret exists
+    let secretExists = true;
+    try {
+      await secretsManager.describeSecret({ SecretId: secretName }).promise();
+    } catch (err) {
+      if (err.code === 'ResourceNotFoundException') {
+        secretExists = false;
+      } else {
+        throw err;
+      }
+    }
+
+    // Prepare the secret string
+    const secretString = JSON.stringify(secretData);
+
+    if (secretExists) {
+      // Update the existing secret
+      await secretsManager.putSecretValue({
+        SecretId: secretName,
+        SecretString: secretString
+      }).promise();
+      console.log(`Updated secret ${secretName} in AWS Secrets Manager`);
+    } else {
+      // Create a new secret
+      await secretsManager.createSecret({
+        Name: secretName,
+        SecretString: secretString
+      }).promise();
+      console.log(`Created new secret ${secretName} in AWS Secrets Manager`);
+    }
+  } catch (err) {
+    console.error(`Error pushing secrets to AWS Secrets Manager: ${err.message}`);
+  }
 }
 
 // Function to periodically check for secret updates
@@ -97,13 +127,8 @@ async function checkForUpdates() {
         fs.writeFileSync(cacheFilePath, JSON.stringify(secretData, null, 2));
         console.log('Secrets cache updated.');
 
-        // Output the updated values in the specified format
-        for (const [key, value] of Object.entries(secretData)) {
-          console.log(`${key}=${value}`);
-        }
-
-        // Write the updated secrets to the .env file
-        writeSecretsToFile(secretData);
+        // Push the updated secrets to AWS Secrets Manager
+        await pushSecretsToAWS(secretData);
       } else {
         console.log('No changes detected in secret values.');
       }
@@ -112,13 +137,8 @@ async function checkForUpdates() {
       fs.writeFileSync(cacheFilePath, JSON.stringify(secretData, null, 2));
       console.log('Secrets cached for the first time.');
 
-      // Output the values in the specified format
-      for (const [key, value] of Object.entries(secretData)) {
-        console.log(`${key}=${value}`);
-      }
-
-      // Write the secrets to the .env file
-      writeSecretsToFile(secretData);
+      // Push the secrets to AWS Secrets Manager
+      await pushSecretsToAWS(secretData);
     }
   } catch (err) {
     console.error('Error checking for updates:', err.message);
