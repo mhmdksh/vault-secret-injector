@@ -1,5 +1,5 @@
 const vault = require('node-vault');
-const AWS = require('aws-sdk');
+const { SecretsManager } = require('@aws-sdk/client-secrets-manager');
 const fs = require('fs');
 const path = require('path');
 
@@ -10,8 +10,8 @@ require('dotenv').config();
 const cacheFilePath = path.resolve(__dirname, '.last.cache.json');
 
 // AWS Secrets Manager client configuration
-const secretsManager = new AWS.SecretsManager({
-  region: process.env.AWS_REGION || 'us-east-1'
+const secretsManager = new SecretsManager({
+  region: process.env.AWS_REGION || 'us-east-1',
 });
 
 // Create a Vault client
@@ -74,9 +74,9 @@ async function pushSecretsToAWS(secretData) {
     // Check if the secret exists
     let secretExists = true;
     try {
-      await secretsManager.describeSecret({ SecretId: secretName }).promise();
+      await secretsManager.describeSecret({ SecretId: secretName });
     } catch (err) {
-      if (err.code === 'ResourceNotFoundException') {
+      if (err.name === 'ResourceNotFoundException') {
         secretExists = false;
       } else {
         throw err;
@@ -91,14 +91,14 @@ async function pushSecretsToAWS(secretData) {
       await secretsManager.putSecretValue({
         SecretId: secretName,
         SecretString: secretString
-      }).promise();
+      });
       console.log(`Updated secret ${secretName} in AWS Secrets Manager`);
     } else {
       // Create a new secret
       await secretsManager.createSecret({
         Name: secretName,
         SecretString: secretString
-      }).promise();
+      });
       console.log(`Created new secret ${secretName} in AWS Secrets Manager`);
     }
   } catch (err) {
