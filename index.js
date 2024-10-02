@@ -161,11 +161,18 @@ async function renewVaultToken() {
   try {
     const tokenLookup = await vaultClient.tokenLookupSelf();
     const ttl = tokenLookup.data.ttl;
+    const maxTtl = tokenLookup.data.meta.max_ttl || null; // Check if there's a max TTL
+
     console.log(`Current token TTL: ${ttl} seconds`);
 
     const renewThreshold = process.env.TOKEN_RENEW_THRESHOLD || 60;
 
     if (ttl <= renewThreshold) {
+      // Check if the token is past its maximum TTL
+      if (maxTtl && ttl <= 0) {
+        throw new Error("Token cannot be renewed: past the max TTL.");
+      }
+
       console.log('Token TTL is low. Renewing the token...');
       const renewedToken = await vaultClient.tokenRenewSelf();
       console.log('Token successfully renewed. New TTL:', renewedToken.auth.lease_duration);
@@ -173,11 +180,16 @@ async function renewVaultToken() {
       console.log('Token is valid and does not require renewal.');
     }
   } catch (err) {
-    console.error('Error checking or renewing the token:', err.message);
+    if (err.message.includes("past the max TTL")) {
+      console.log('Token has reached its max TTL. Re-authenticating using AppRole...');
+      await authenticateVault(); // Re-authenticate using AppRole to get a new token
+    } else {
+      console.error('Error checking or renewing the token:', err.message);
+    }
   }
 }
 
-// Call the function periodically to renew the token if necessary
+// Function to keep renewing or re-authenticate the token if necessary
 function keepTokenAlive(intervalInSeconds) {
   setInterval(async () => {
     try {
