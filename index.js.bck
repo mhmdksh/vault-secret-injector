@@ -137,38 +137,3 @@ readSecret().then(() => {
   const intervalInSeconds = process.env.CHECK_INTERVAL || 5; // Default to 5 seconds if not set
   keepAlive(intervalInSeconds);
 });
-
-// Function to check the token's TTL and renew it if necessary
-async function renewVaultToken() {
-  try {
-    // Check the current token's TTL
-    const tokenLookup = await vaultClient.tokenLookupSelf();
-    const ttl = tokenLookup.data.ttl;
-
-    console.log(`Current token TTL: ${ttl} seconds`);
-
-    // If the TTL is less than a threshold (e.g., 60 seconds), renew the token
-    const renewThreshold = process.env.TOKEN_RENEW_THRESHOLD || 60;
-
-    if (ttl <= renewThreshold) {
-      console.log('Token TTL is low. Renewing the token...');
-      const renewedToken = await vaultClient.tokenRenewSelf();
-      console.log('Token successfully renewed. New TTL:', renewedToken.auth.lease_duration);
-    } else {
-      console.log('Token is valid and does not require renewal.');
-    }
-  } catch (err) {
-    console.error('Error checking or renewing the token:', err.message);
-  }
-}
-
-// Call the function periodically to renew the token if necessary
-function keepTokenAlive(intervalInSeconds) {
-  setInterval(() => {
-    renewVaultToken();
-  }, intervalInSeconds * 1000);
-}
-
-// Start token renewal check (you can set a different interval if needed)
-const tokenCheckInterval = process.env.TOKEN_CHECK_INTERVAL || 300; // Check every 5 minutes
-keepTokenAlive(tokenCheckInterval);
