@@ -9,33 +9,12 @@ require('dotenv').config();
 const cacheFilePath = path.resolve(__dirname, '.last.cache.json');
 const secretsFilePath = process.env.SECRETS_FILE_PATH || path.resolve('/secrets', 'secrets.env');
 
-// Create a Vault client without a token
-let vaultClient = vault({
+// Create a Vault client
+const vaultClient = vault({
   apiVersion: 'v1',
   endpoint: process.env.VAULT_ENDPOINT,
+  token: process.env.VAULT_TOKEN,
 });
-
-// Function to authenticate using AppRole and update Vault client with the token
-async function authenticateVault() {
-  try {
-    const appRole = process.env.VAULT_APPROLE_ID;
-    const secretId = process.env.VAULT_SECRET_ID;
-
-    if (appRole && secretId) {
-      const result = await vaultClient.approleLogin({
-        role_id: appRole,
-        secret_id: secretId,
-      });
-      // Update the token in the Vault client
-      vaultClient.token = result.auth.client_token;
-      console.log('Successfully authenticated with Vault using AppRole.');
-    } else {
-      console.error('AppRole ID or Secret ID is missing for authentication.');
-    }
-  } catch (err) {
-    console.error('Error during authentication:', err.message);
-  }
-}
 
 // Function to read the secret from Vault
 async function readSecret() {
@@ -43,11 +22,6 @@ async function readSecret() {
   const secretPath = process.env.VAULT_SECRET_PATH;
 
   try {
-    // Ensure we have a valid token before trying to read secrets
-    if (!vaultClient.token) {
-      await authenticateVault();
-    }
-
     // Read the secret from the specified path
     const secret = await vaultClient.read(`${kvStore}/data/${secretPath}`);
     const secretData = secret.data.data;
@@ -65,9 +39,22 @@ async function readSecret() {
     writeSecretsToFile(secretData);
   } catch (err) {
     if (err.message.includes('permission denied') || err.message.includes('invalid token')) {
-      console.error('Authentication failure. Re-authenticating...');
-      await authenticateVault(); // Re-authenticate if token is invalid
-      await readSecret(); // Retry reading secrets after re-authentication
+      console.error('Authentication Failure');
+
+      // Check if there is a cached secret available
+      if (fs.existsSync(cacheFilePath)) {
+        const cachedData = JSON.parse(fs.readFileSync(cacheFilePath, 'utf-8'));
+
+        // Output the cached values in the specified format
+        for (const [key, value] of Object.entries(cachedData)) {
+          console.log(`${key}=${value}`);
+        }
+
+        // Write the cached secrets to the .env file
+        writeSecretsToFile(cachedData);
+      } else {
+        console.error('No cached secret values available');
+      }
     } else {
       console.error('Error reading secret:', err.message);
     }
@@ -77,7 +64,7 @@ async function readSecret() {
 // Function to write secrets to a .env file
 function writeSecretsToFile(secretData) {
   const secretLines = Object.entries(secretData).map(([key, value]) => `${key}=${value}`).join('\n');
-
+  
   // Create the .env file if it doesn't exist and log the action
   if (!fs.existsSync(secretsFilePath)) {
     fs.writeFileSync(secretsFilePath, '');
@@ -89,17 +76,40 @@ function writeSecretsToFile(secretData) {
   console.log(`Secrets written to ${secretsFilePath}`);
 }
 
+// Function to check and renew the Vault token if it is close to expiration
+async function checkToken() {
+  const threshold = parseInt(process.env.TOKEN_RENEW_THRESHOLD || '60', 10); // Default threshold is 60 seconds
+  try {
+    // Lookup the current token's TTL (Time to Live)
+    const tokenInfo = await vaultClient.tokenLookupSelf();
+    const ttl = tokenInfo.data.ttl; // TTL is in seconds
+
+    console.log(`Token TTL: ${ttl} seconds`);
+
+    // Check if the TTL is below the threshold
+    if (ttl <= threshold) {
+      console.log(`Token TTL is below the threshold of ${threshold} seconds. Renewing the token...`);
+
+      // Renew the token
+      const renewedToken = await vaultClient.tokenRenewSelf();
+      console.log(`Token renewed successfully. New TTL: ${renewedToken.auth.lease_duration} seconds`);
+
+      // Update the token in the Vault client
+      vaultClient.token = renewedToken.auth.client_token;
+    } else {
+      console.log('Token is still valid and does not need renewal.');
+    }
+  } catch (err) {
+    console.error('Error checking token:', err.message);
+  }
+}
+
 // Function to periodically check for secret updates
 async function checkForUpdates() {
   const kvStore = process.env.VAULT_KV_STORE;
   const secretPath = process.env.VAULT_SECRET_PATH;
 
   try {
-    // Ensure we have a valid token before trying to check for updates
-    if (!vaultClient.token) {
-      await authenticateVault();
-    }
-
     // Read the secret from the specified path
     const secret = await vaultClient.read(`${kvStore}/data/${secretPath}`);
     const secretData = secret.data.data;
@@ -143,66 +153,23 @@ async function checkForUpdates() {
   }
 }
 
-// Function to keep the Node.js process alive and check for updates periodically
-function keepAlive(intervalInSeconds) {
+// Function to periodically check the token and secrets
+function keepAlive() {
+  const secretsCheckInterval = parseInt(process.env.SECRETS_CHECK_INTERVAL || '5', 10); // Default to 5 seconds
+  const tokenCheckInterval = parseInt(process.env.TOKEN_CHECK_INTERVAL || '60', 10); // Default to 60 seconds
+
+  // Set interval to check for secrets updates
   setInterval(() => {
     checkForUpdates();
-  }, intervalInSeconds * 1000);
+  }, secretsCheckInterval * 1000);
+
+  // Set interval to check and renew the token
+  setInterval(() => {
+    checkToken();
+  }, tokenCheckInterval * 1000);
 }
 
-// Execute the readSecret function initially and set the interval for updates
+// Execute the readSecret function initially
 readSecret().then(() => {
-  const intervalInSeconds = process.env.CHECK_INTERVAL || 5; // Default to 5 seconds if not set
-  keepAlive(intervalInSeconds);
+  keepAlive();
 });
-
-// Function to check the token's TTL and renew it if necessary
-async function renewVaultToken() {
-  try {
-    const tokenLookup = await vaultClient.tokenLookupSelf();
-    const ttl = tokenLookup.data.ttl;
-    const maxTtl = tokenLookup.data.meta.max_ttl || null; // Check if there's a max TTL
-
-    console.log(`Current token TTL: ${ttl} seconds`);
-
-    const renewThreshold = process.env.TOKEN_RENEW_THRESHOLD || 60;
-
-    if (ttl <= renewThreshold) {
-      // Check if the token is past its maximum TTL
-      if (maxTtl && ttl <= 0) {
-        throw new Error("Token cannot be renewed: past the max TTL.");
-      }
-
-      console.log('Token TTL is low. Renewing the token...');
-      const renewedToken = await vaultClient.tokenRenewSelf();
-      console.log('Token successfully renewed. New TTL:', renewedToken.auth.lease_duration);
-    } else {
-      console.log('Token is valid and does not require renewal.');
-    }
-  } catch (err) {
-    if (err.message.includes("past the max TTL")) {
-      console.log('Token has reached its max TTL. Re-authenticating using AppRole...');
-      await authenticateVault(); // Re-authenticate using AppRole to get a new token
-    } else {
-      console.error('Error checking or renewing the token:', err.message);
-    }
-  }
-}
-
-// Function to keep renewing or re-authenticate the token if necessary
-function keepTokenAlive(intervalInSeconds) {
-  setInterval(async () => {
-    try {
-      await renewVaultToken(); // Check TTL and renew if needed
-    } catch (err) {
-      if (err.message.includes('invalid token')) {
-        console.log('Token renewal failed. Attempting to re-authenticate...');
-        await authenticateVault(); // Re-authenticate if renewal fails
-      }
-    }
-  }, intervalInSeconds * 1000);
-}
-
-// Start token renewal check (set interval via TOKEN_CHECK_INTERVAL)
-const tokenCheckInterval = process.env.TOKEN_CHECK_INTERVAL || 300; // Check every 5 minutes
-keepTokenAlive(tokenCheckInterval);
