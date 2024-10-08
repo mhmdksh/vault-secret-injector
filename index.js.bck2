@@ -16,29 +16,6 @@ const vaultClient = vault({
   token: process.env.VAULT_TOKEN,
 });
 
-// Utility function to parse time duration (s, m, h, d) and convert to seconds
-function parseDuration(duration) {
-  const unit = duration.slice(-1);
-  const value = parseInt(duration.slice(0, -1), 10);
-
-  if (isNaN(value)) {
-    throw new Error(`Invalid time duration: ${duration}`);
-  }
-
-  switch (unit) {
-    case 's':
-      return value; // Seconds
-    case 'm':
-      return value * 60; // Minutes to seconds
-    case 'h':
-      return value * 60 * 60; // Hours to seconds
-    case 'd':
-      return value * 60 * 60 * 24; // Days to seconds
-    default:
-      throw new Error(`Invalid time unit in duration: ${unit}`);
-  }
-}
-
 // Function to read the secret from Vault
 async function readSecret() {
   const kvStore = process.env.VAULT_KV_STORE;
@@ -101,7 +78,7 @@ function writeSecretsToFile(secretData) {
 
 // Function to check and renew the Vault token if it is close to expiration
 async function checkToken() {
-  const threshold = parseDuration(process.env.TOKEN_RENEW_THRESHOLD || '60s'); // Default threshold is 60 seconds
+  const threshold = parseInt(process.env.TOKEN_RENEW_THRESHOLD || '60', 10); // Default threshold is 60 seconds
   try {
     // Lookup the current token's TTL (Time to Live)
     const tokenInfo = await vaultClient.tokenLookupSelf();
@@ -178,11 +155,8 @@ async function checkForUpdates() {
 
 // Function to periodically check the token and secrets
 function keepAlive() {
-  const secretsCheckInterval = parseDuration(process.env.SECRETS_CHECK_INTERVAL || '5s'); // Default to 5 seconds
-  const tokenCheckInterval = parseDuration(process.env.TOKEN_CHECK_INTERVAL || '60s'); // Default to 60 seconds
-
-  console.log(`Secrets will be checked every ${secretsCheckInterval} seconds.`);
-  console.log(`Token will be checked every ${tokenCheckInterval} seconds.`);
+  const secretsCheckInterval = parseInt(process.env.SECRETS_CHECK_INTERVAL || '5', 10); // Default to 5 seconds
+  const tokenCheckInterval = parseInt(process.env.TOKEN_CHECK_INTERVAL || '60', 10); // Default to 60 seconds
 
   // Set interval to check for secrets updates
   setInterval(() => {
