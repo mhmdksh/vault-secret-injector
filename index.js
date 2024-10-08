@@ -101,7 +101,9 @@ function writeSecretsToFile(secretData) {
 
 // Function to check and renew the Vault token if it is close to expiration
 async function checkToken() {
-  const threshold = parseDuration(process.env.TOKEN_RENEW_THRESHOLD || '60s'); // Default threshold is 60 seconds
+  const thresholdString = process.env.TOKEN_RENEW_THRESHOLD || '60s'; // Default threshold as string
+  const threshold = parseDuration(thresholdString); // Convert to seconds
+
   try {
     // Lookup the current token's TTL (Time to Live)
     const tokenInfo = await vaultClient.tokenLookupSelf();
@@ -111,7 +113,7 @@ async function checkToken() {
 
     // Check if the TTL is below the threshold
     if (ttl <= threshold) {
-      console.log(`Token TTL is below the threshold of ${threshold} seconds. Renewing the token...`);
+      console.log(`Token TTL is below the threshold of ${thresholdString}. Renewing the token...`);
 
       // Renew the token
       const renewedToken = await vaultClient.tokenRenewSelf();
@@ -120,7 +122,7 @@ async function checkToken() {
       // Update the token in the Vault client
       vaultClient.token = renewedToken.auth.client_token;
     } else {
-      console.log('Token is still valid and does not need renewal.');
+      console.log(`Token is still valid. TTL (${ttl} seconds) is above the renewal threshold (${thresholdString}).`);
     }
   } catch (err) {
     console.error('Error checking token:', err.message);
@@ -178,11 +180,14 @@ async function checkForUpdates() {
 
 // Function to periodically check the token and secrets
 function keepAlive() {
-  const secretsCheckInterval = parseDuration(process.env.SECRETS_CHECK_INTERVAL || '5s'); // Default to 5 seconds
-  const tokenCheckInterval = parseDuration(process.env.TOKEN_CHECK_INTERVAL || '60s'); // Default to 60 seconds
+  const secretsCheckIntervalString = process.env.SECRETS_CHECK_INTERVAL || '5s'; // Default as string
+  const tokenCheckIntervalString = process.env.TOKEN_CHECK_INTERVAL || '60s'; // Default as string
 
-  console.log(`Secrets will be checked every ${secretsCheckInterval} seconds.`);
-  console.log(`Token will be checked every ${tokenCheckInterval} seconds.`);
+  const secretsCheckInterval = parseDuration(secretsCheckIntervalString); // Convert to seconds
+  const tokenCheckInterval = parseDuration(tokenCheckIntervalString); // Convert to seconds
+
+  console.log(`Secrets will be checked every ${secretsCheckIntervalString}.`);
+  console.log(`Token will be checked every ${tokenCheckIntervalString}.`);
 
   // Set interval to check for secrets updates
   setInterval(() => {
