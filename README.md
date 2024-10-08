@@ -2,7 +2,6 @@
 A Secret Injector Service built specifically to sync secrets from vault to host machines privately and securely
 ## Configure a Vault Token
 1. Download vault cli from here: https://developer.hashicorp.com/vault/install
-```
 2. Export Vault Configs
 ```
 export VAULT_ADDR='https://vault.giveth.io'
@@ -22,6 +21,7 @@ vault token create -policy="admin" -period=30d -format=json | jq -r ".auth.clien
 cat periodic_token.txt
 ```
 7. Lookup the validity of the token using the below command
+```
 vault token lookup $(cat periodic_token.txt)
 ```
 
