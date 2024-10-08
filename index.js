@@ -21,22 +21,28 @@ function parseDuration(duration) {
   const unit = duration.slice(-1);
   const value = parseInt(duration.slice(0, -1), 10);
 
-  if (isNaN(value)) {
+  if (!isNaN(value)) {
+    switch (unit) {
+      case 's':
+        return value; // Seconds
+      case 'm':
+        return value * 60; // Minutes to seconds
+      case 'h':
+        return value * 60 * 60; // Hours to seconds
+      case 'd':
+        return value * 60 * 60 * 24; // Days to seconds
+      default:
+        throw new Error(`Invalid time unit in duration: ${unit}`);
+    }
+  }
+
+  // If no time format (e.g., `s`, `m`, `h`, `d`) is provided, treat the value as seconds
+  const numericValue = parseInt(duration, 10);
+  if (isNaN(numericValue)) {
     throw new Error(`Invalid time duration: ${duration}`);
   }
 
-  switch (unit) {
-    case 's':
-      return value; // Seconds
-    case 'm':
-      return value * 60; // Minutes to seconds
-    case 'h':
-      return value * 60 * 60; // Hours to seconds
-    case 'd':
-      return value * 60 * 60 * 24; // Days to seconds
-    default:
-      throw new Error(`Invalid time unit in duration: ${unit}`);
-  }
+  return numericValue; // Default to seconds if no unit is provided
 }
 
 // Function to read the secret from Vault
